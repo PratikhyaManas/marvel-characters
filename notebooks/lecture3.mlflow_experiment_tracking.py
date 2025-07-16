@@ -1,12 +1,14 @@
 # Databricks notebook source
 import json
-import mlflow
 import os
 
+import mlflow
 from dotenv import load_dotenv
 
+
 # Set up Databricks or local MLflow tracking
-def is_databricks():
+def is_databricks() -> bool:
+    """Check if the code is running in a Databricks environment."""
     return "DATABRICKS_RUNTIME_VERSION" in os.environ
 
 # COMMAND ----------
@@ -17,6 +19,7 @@ if not is_databricks():
     load_dotenv()
     profile = os.environ.get("PROFILE", "DEFAULT")
     mlflow.set_tracking_uri(f"databricks://{profile}")
+    mlflow.set_registry_uri(f"databricks-uc://{profile}")
 
 mlflow.get_tracking_uri()
 # COMMAND ----------
@@ -136,6 +139,7 @@ mlflow.end_run()
 # COMMAND ----------
 # other ways
 from time import time
+
 time_hour_ago = int(time() - 3600) * 1000
 
 runs = mlflow.search_runs(
