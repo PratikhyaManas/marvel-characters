@@ -1,1 +1,5 @@
-{}
+{
+  "authProfile": "dbc-d2486cd9-dc6b",
+  "serverless": true,
+  "useClusterOverride": false
+}
