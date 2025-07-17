@@ -175,4 +175,4 @@ with mlflow.start_run(run_name="marvel_top_level_run") as run:
         with mlflow.start_run(run_name=f"marvel_subrun_{str(i)}", nested=True) as subrun:
             mlflow.log_metrics({"m1": 5.1+i,
                                 "m2": 2*i,
-                                "m3": 3+1.5*i}) 
+                                "m3": 3+1.5*i})

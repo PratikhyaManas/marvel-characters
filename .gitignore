@@ -12,6 +12,7 @@ __pycache__/
 env/
 build/
 develop-eggs/
+dist/
 downloads/
 eggs/
 .eggs/
@@ -49,8 +50,8 @@ coverage.xml
 profile_default/
 ipython_config.py
 
-# pyenv
-.python-version
+# folders
+downloaded_artifacts/
 
 # mypy
 .mypy_cache/
