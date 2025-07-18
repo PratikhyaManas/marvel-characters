@@ -26,8 +26,8 @@ class MarvelModelWrapper(mlflow.pyfunc.PythonModel):
         return adjust_predictions(predictions)
 
     def log_register_model(self, wrapped_model_uri: str, pyfunc_model_name: str,
-                           experiment_name: str, tags: Tags, code_paths: list[str]) -> None:
-
+                           experiment_name: str, tags: Tags, code_paths: list[str],
+                           input_example: pd.DataFrame) -> None:
         mlflow.set_experiment(experiment_name=experiment_name)
         with mlflow.start_run(run_name=f"wrapper-lightgbm-{datetime.now().strftime('%Y-%m-%d')}",
             tags=tags.to_dict()):
@@ -37,7 +37,7 @@ class MarvelModelWrapper(mlflow.pyfunc.PythonModel):
                 additional_pip_deps.append(f"code/{whl_name}")
             conda_env = _mlflow_conda_env(additional_pip_deps=additional_pip_deps)
 
-            signature = infer_signature(model_input=self.model.input_example,
+            signature = infer_signature(model_input=input_example,
                                         model_output={"Survival prediction": ["alive"]})
             model_info = mlflow.pyfunc.log_model(
                 python_model=self,

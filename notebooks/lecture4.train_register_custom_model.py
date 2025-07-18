@@ -8,6 +8,7 @@ from marvel_characters.models.custom_model import MarvelModelWrapper
 from importlib.metadata import version
 from dotenv import load_dotenv
 from mlflow import MlflowClient
+import os
 
 # Set up Databricks or local MLflow tracking
 def is_databricks():
@@ -19,8 +20,6 @@ def is_databricks():
 
 if not is_databricks():
     load_dotenv()
-    import os
-    os.environ["PROFILE"] = "marvelous"
     profile = os.environ["PROFILE"]
     mlflow.set_tracking_uri(f"databricks://{profile}")
     mlflow.set_registry_uri(f"databricks-uc://{profile}")
@@ -41,11 +40,16 @@ wrapped_model_version = client.get_model_version_by_alias(
 # Initialize model with the config path
 
 # COMMAND ----------
+test_set = spark.table(f"{config.catalog_name}.{config.schema_name}.test_set").toPandas()
+X_test = test_set[config.num_features + config.cat_features]
+
+# COMMAND ----------
 pyfunc_model_name = f"{config.catalog_name}.{config.schema_name}.marvel_character_model_pyfunc"
 wrapper = MarvelModelWrapper()
 wrapper.log_register_model(wrapped_model_uri=f"models:/{wrapped_model_version.model_id}",
                            pyfunc_model_name=pyfunc_model_name,
                            experiment_name=config.experiment_name_custom,
+                           input_example=X_test[0:1],
                            tags=tags,
                            code_paths=code_paths)
 
@@ -56,8 +60,6 @@ loaded_pufunc_model = mlflow.pyfunc.load_model("models:/{pyfunc_model_name}@late
 unwraped_model = loaded_pufunc_model.unwrap_python_model()
 
 # COMMAND ----------
-test_set = spark.table(f"{config.catalog_name}.{config.schema_name}.test_set").toPandas()
-X_test = test_set[config.num_features + config.cat_features]
 unwraped_model.predict(context=None, model_input=X_test[0:1])
 # COMMAND ----------
 # another predict function with uri
