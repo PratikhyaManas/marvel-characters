@@ -59,8 +59,7 @@ print(mlflow.active_run() is None)
 # start a run
 with mlflow.start_run(
     run_name="marvel-demo-run",
-    tags={"git_sha": "1234567890abcd",
-          "branch": "week2"},
+    tags={"git_sha": "1234567890abcd"},
     description="marvel character prediction demo run",
 ) as run:
     run_id = run.info.run_id
@@ -105,8 +104,7 @@ mlflow.end_run()
 # COMMAND ----------
 # start another run and log other things
 mlflow.start_run(run_name="marvel-demo-run-extra",
-                 tags={"git_sha": "1234567890abcd",
-                       "branch": "week2"},
+                 tags={"git_sha": "1234567890abcd"},
                        description="marvel demo run with extra artifacts",)
 mlflow.log_metric(key="metric3", value=3.0)
 # dynamically log metric (trainings epochs)
@@ -176,3 +174,5 @@ with mlflow.start_run(run_name="marvel_top_level_run") as run:
             mlflow.log_metrics({"m1": 5.1+i,
                                 "m2": 2*i,
                                 "m3": 3+1.5*i})
+
+# COMMAND ----------

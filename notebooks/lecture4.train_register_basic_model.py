@@ -1,12 +1,14 @@
 # Databricks notebook source
 
+import json
+
 import mlflow
 from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 
 from marvel_characters.config import ProjectConfig, Tags
 from marvel_characters.models.basic_model import BasicModel
-import json
+import os
 
 
 # Set up Databricks or local MLflow tracking
@@ -19,8 +21,6 @@ def is_databricks():
 
 if not is_databricks():
     load_dotenv()
-    import os
-    os.environ["PROFILE"] = "marvelous"
     profile = os.environ["PROFILE"]
     mlflow.set_tracking_uri(f"databricks://{profile}")
     mlflow.set_registry_uri(f"databricks-uc://{profile}")
@@ -42,6 +42,8 @@ basic_model.prepare_features()
 
 # COMMAND ----------
 basic_model.train()
+
+# COMMAND ----------
 basic_model.log_model()
 
 # COMMAND ----------

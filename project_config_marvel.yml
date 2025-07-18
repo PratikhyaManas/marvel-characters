@@ -21,7 +21,7 @@ parameters:
 num_features:
   - Height
   - Weight
-
+  
 cat_features:
   - Universe
   - Identity
@@ -29,6 +29,7 @@ cat_features:
   - Marital_Status
   - Teams
   - Origin
-  - Creators
+  - Magic
+  - Mutant
 
 target: Alive

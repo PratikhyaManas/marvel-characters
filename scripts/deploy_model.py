@@ -6,8 +6,6 @@ from pyspark.sql import SparkSession
 
 from marvel_characters.config import ProjectConfig
 from marvel_characters.serving.model_serving import ModelServing
-from databricks.sdk import WorkspaceClient
-from marvel_characters.utils import get_dbr_host
 
 parser = argparse.ArgumentParser()
 parser.add_argument(

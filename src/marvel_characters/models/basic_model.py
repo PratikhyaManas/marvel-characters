@@ -17,6 +17,7 @@ from loguru import logger
 from mlflow import MlflowClient
 from mlflow.models import infer_signature
 from pyspark.sql import SparkSession
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
@@ -59,13 +60,13 @@ class BasicModel:
         self.train_set_spark = self.spark.table(f"{self.catalog_name}.{self.schema_name}.train_set")
         self.train_set = self.train_set_spark.toPandas()
         self.test_set_spark = self.spark.table(f"{self.catalog_name}.{self.schema_name}.test_set")
-        self.test_set =  self.test_set.toPandas()
+        self.test_set =  self.test_set_spark.toPandas()
 
         self.X_train = self.train_set[self.num_features + self.cat_features]
         self.y_train = self.train_set[self.target]
         self.X_test = self.test_set[self.num_features + self.cat_features]
         self.y_test = self.test_set[self.target]
-        self.eval_data = self.test_set[self.num_features + self.cat_features + self.target]
+        self.eval_data = self.test_set[self.num_features + self.cat_features + [self.target]]
 
         train_delta_table = DeltaTable.forName(self.spark,
                                                f"{self.catalog_name}.{self.schema_name}.train_set")
@@ -209,3 +210,4 @@ class BasicModel:
             alias="latest-model",
             version=latest_version,
         )
+        return latest_version

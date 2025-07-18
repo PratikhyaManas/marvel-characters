@@ -7,6 +7,7 @@ from marvel_characters.config import ProjectConfig, Tags
 from marvel_characters.models.custom_model import MarvelModelWrapper
 from importlib.metadata import version
 from dotenv import load_dotenv
+from mlflow import MlflowClient
 
 # Set up Databricks or local MLflow tracking
 def is_databricks():
@@ -33,48 +34,30 @@ marvel_characters_v = version("marvel_characters")
 code_paths=[f"../dist/marvel_characters-{marvel_characters_v}-py3-none-any.whl"]
 
 # COMMAND ----------
-wrapped_model_version = get_model_version_by_alias(
+client = MlflowClient()
+wrapped_model_version = client.get_model_version_by_alias(
     name=f"{config.catalog_name}.{config.schema_name}.marvel_character_model_basic",
     alias="latest-model")
 # Initialize model with the config path
 
 # COMMAND ----------
+pyfunc_model_name = f"{config.catalog_name}.{config.schema_name}.marvel_character_model_pyfunc"
 wrapper = MarvelModelWrapper()
 wrapper.log_register_model(wrapped_model_uri=f"models:/{wrapped_model_version.model_id}",
-                           pyfunc_model_name=f"{config.catalog_name}.{config.schema_name}.marvel_character_model_pyfunc",
+                           pyfunc_model_name=pyfunc_model_name,
                            experiment_name=config.experiment_name_custom,
                            tags=tags,
                            code_paths=code_paths)
 
 # COMMAND ----------
-loaded_pufunc_model = mlflow.pyfunc.load_model(pyfunc_model.model_uri)
-# COMMAND ----------
-client.set_registered_model_alias(
-    name=registered_model_name,
-    alias="latest-model",
-    version=pyfunc_model.registered_model_version,
-)
-# COMMAND ----------
+# unwrap and predict
+loaded_pufunc_model = mlflow.pyfunc.load_model("models:/{pyfunc_model_name}@latest")
+
 unwraped_model = loaded_pufunc_model.unwrap_python_model()
+
+# COMMAND ----------
+test_set = spark.table(f"{config.catalog_name}.{config.schema_name}.test_set").toPandas()
+X_test = test_set[config.num_features + config.cat_features]
 unwraped_model.predict(context=None, model_input=X_test[0:1])
-
 # COMMAND ----------
-run_id = mlflow.search_runs(
-    experiment_names=["/Shared/marvel-characters-custom"], filter_string="tags.branch='module2'"
-).run_id[0]
-
-model = mlflow.pyfunc.load_model(f"runs:/{run_id}/pyfunc-marvel-character-model")
-
-# COMMAND ----------
-# Register model
-custom_model.register_model()
-
-# COMMAND ----------
-# Predict on the test set
-
-test_set = spark.table(f"{config.catalog_name}.{config.schema_name}.test_set").limit(10)
-
-X_test = test_set.drop(config.target).toPandas()
-
-predictions_df = custom_model.load_latest_model_and_predict(X_test)
-# COMMAND ---------- 
+# another predict function with uri
