@@ -10,13 +10,11 @@ catalog_name, schema_name → Database schema names for Databricks tables.
 """
 
 import mlflow
-import numpy as np
 import pandas as pd
 from delta.tables import DeltaTable
 from lightgbm import LGBMClassifier
 from loguru import logger
 from mlflow import MlflowClient
-from mlflow.data.dataset_source import DatasetSource
 from mlflow.models import infer_signature
 from pyspark.sql import SparkSession
 from sklearn.compose import ColumnTransformer
@@ -50,7 +48,7 @@ class BasicModel:
         self.schema_name = self.config.schema_name
         self.experiment_name = self.config.experiment_name_basic
         self.model_name = f"{self.catalog_name}.{self.schema_name}.marvel_character_model_basic"
-        self.tags = tags.dict()
+        self.tags = tags.to_dict()
 
     def load_data(self) -> None:
         """Load training and testing data from Delta tables.
@@ -186,7 +184,7 @@ class BasicModel:
                 evaluators=["default"],
             )
         metrics_old = result.metrics
-        if self.metrics["f1_score"] > metrics_old["f1_score"]:
+        if self.metrics["f1_score"] >= metrics_old["f1_score"]:
             logger.info("Current model performs better. Returning True.")
             return True
         else:

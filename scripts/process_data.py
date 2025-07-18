@@ -23,21 +23,12 @@ parser.add_argument(
     required=True,
 )
 
-parser.add_argument(
-    "--is_test",
-    action="store",
-    default=0,
-    type=int,
-    required=True,
-)
 
 args = parser.parse_args()
-root_path = args.root_path
-config_path = f"{root_path}/files/project_config_marvel.yml"
+config_path = f"{args.root_path}/files/project_config_marvel.yml"
 
 
 config = ProjectConfig.from_yaml(config_path=config_path, env=args.env)
-is_test = args.is_test
 
 logger.info("Configuration loaded:")
 logger.info(yaml.dump(config, default_flow_style=False))

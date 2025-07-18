@@ -43,10 +43,17 @@ class ProjectConfig(BaseModel):
 
 
 class Tags(BaseModel):
-    """Represents a set of tags for a Git commit.
-
-    Contains information about the Git SHA, branch, and job run ID.
-    """
+    """Model for MLflow tags."""
 
     git_sha: str
     branch: str
+    run_id: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Convert the Tags instance to a dictionary."""
+        tags_dict = {}
+        tags_dict["git_sha"] = self.git_sha
+        tags_dict["branch"] = self.branch
+        if self.run_id is not None:
+            tags_dict["run_id"] = self.run_id
+        return tags_dict

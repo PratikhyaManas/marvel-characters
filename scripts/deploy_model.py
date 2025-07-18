@@ -26,18 +26,9 @@ parser.add_argument(
     required=True,
 )
 
-parser.add_argument(
-    "--is_test",
-    action="store",
-    default=0,
-    type=int,
-    required=True,
-)
+args = parser.parse_args()
 
-
-root_path = args.root_path
-is_test = args.is_test
-config_path = f"{root_path}/files/project_config_marvel.yml"
+config_path = f"{args.root_path}/files/project_config_marvel.yml"
 
 spark = SparkSession.builder.getOrCreate()
 dbutils = DBUtils(spark)
@@ -61,8 +52,3 @@ model_serving = ModelServing(
 model_serving.deploy_or_update_serving_endpoint(version=model_version)
 logger.info("Started deployment/update of the Marvel serving endpoint.")
 
-# Delete endpoint if test
-if is_test==1:
-    workspace = WorkspaceClient()
-    workspace.serving_endpoints.delete(name=endpoint_name)
-    logger.info("Deleting serving endpoint.")
