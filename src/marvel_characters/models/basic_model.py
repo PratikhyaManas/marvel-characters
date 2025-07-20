@@ -150,7 +150,7 @@ class BasicModel:
                 table_name=f"{self.catalog_name}.{self.schema_name}.test_set",
                 version=self.test_data_version,
             )
-            mlflow.log_input(test_dataset, context="training")
+            mlflow.log_input(test_dataset, context="testing")
             self.model_info = mlflow.sklearn.log_model(
                 sk_model=self.pipeline,
                 artifact_path="lightgbm-pipeline-model",
@@ -175,13 +175,17 @@ class BasicModel:
         Compares the current model with the latest registered model using F1-score.
         :return: True if the current model performs better, False otherwise.
         """
-        model_uri = f"models:/{self.model_name}@latest-model"
+        client = MlflowClient()
+        old_model_version = client.get_model_version_by_alias(
+            name=self.model_name,
+            alias="latest-model")
 
+        model_uri = f"models:/{old_model_version.model_id}"
         result = mlflow.models.evaluate(
                 model_uri,
                 self.eval_data,
                 targets=self.config.target,
-                model_type="regressor",
+                model_type="classifier",
                 evaluators=["default"],
             )
         metrics_old = result.metrics

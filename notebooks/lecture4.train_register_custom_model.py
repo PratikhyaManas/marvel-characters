@@ -44,7 +44,7 @@ test_set = spark.table(f"{config.catalog_name}.{config.schema_name}.test_set").t
 X_test = test_set[config.num_features + config.cat_features]
 
 # COMMAND ----------
-pyfunc_model_name = f"{config.catalog_name}.{config.schema_name}.marvel_character_model_pyfunc"
+pyfunc_model_name = f"{config.catalog_name}.{config.schema_name}.marvel_character_model_custom"
 wrapper = MarvelModelWrapper()
 wrapper.log_register_model(wrapped_model_uri=f"models:/{wrapped_model_version.model_id}",
                            pyfunc_model_name=pyfunc_model_name,
@@ -55,7 +55,7 @@ wrapper.log_register_model(wrapped_model_uri=f"models:/{wrapped_model_version.mo
 
 # COMMAND ----------
 # unwrap and predict
-loaded_pufunc_model = mlflow.pyfunc.load_model("models:/{pyfunc_model_name}@latest")
+loaded_pufunc_model = mlflow.pyfunc.load_model(f"models:/{pyfunc_model_name}@latest-model")
 
 unwraped_model = loaded_pufunc_model.unwrap_python_model()
 
