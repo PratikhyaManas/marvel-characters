@@ -1,37 +1,69 @@
+# ============================================================================
+# CD Workflow: Continuous Deployment for Marvel Characters MLOps Project
+# ============================================================================
+# Purpose: Deploy validated code to Databricks environments (Acceptance/Production)
+# Trigger: Automatically on push to main branch, or manually via workflow_dispatch
+# 
+# Workflow Steps:
+# 1. Checkout source code
+# 2. Install and configure Databricks CLI
+# 3. Authenticate using service principal credentials
+# 4. Deploy Databricks bundle to target environment(s)
+# 5. Tag production releases in git (prd environment only)
+#
+# Environment Strategy:
+# - Matrix deployment supports multiple environments: [acc, prd]
+# - Currently configured for 'acc' only (uncomment prd when ready)
+# - Each environment requires configured secrets and variables in GitHub
+# ============================================================================
+
 name: CD
 
+# Trigger Configuration
 on:
+  # Manual trigger: Allow workflow to be run manually from GitHub Actions UI
   workflow_dispatch:
 
+  # Automatic trigger: Run on pushes to main branch
   push:
     branches:
         - 'main'
 
 jobs:
+  # Job: Deploy to Databricks environments
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # Use latest Ubuntu runner
+    # Matrix Strategy: Deploy to multiple environments sequentially
     strategy:
       matrix:
-        environment: [acc] #[acc, prd]
+        environment: [acc] # Currently: Acceptance only. Uncomment for production: [acc, prd]
+    # GitHub Environment: Enables environment-specific secrets and protection rules
     environment: ${{ matrix.environment }}
+    # Permissions: Required for git operations (tagging releases)
     permissions:
-      contents: write # to push tag
+      contents: write # Allow workflow to push git tags
+    # Environment Variables: Databricks authentication credentials
     env:
-      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
-      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
-      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}  # Workspace URL from environment variables
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}  # Service principal client ID
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}  # Service principal secret
     steps:
+      # Step 1: Checkout repository source code
       - name: Checkout Source Code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 #v4.2.2
 
+      # Step 2: Install Databricks CLI for bundle deployment operations
       - name: Install Databricks CLI
         uses: databricks/setup-cli@49580195afe1ccb06d195764a1d0ae9fabfe2edd #v0.246.0
         with:
-          version: 0.246.0
+          version: 0.246.0  # Pin specific CLI version for consistency
 
+      # Step 3: Configure Databricks CLI with service principal authentication
       - name: Configure Databricks CLI
         run: |
+          # Create Databricks configuration directory
           mkdir -p ~/.databricks
+          # Write configuration file with service principal credentials
           cat > ~/.databrickscfg << EOF
           [marvelous]
           host = ${{ vars.DATABRICKS_HOST }}
@@ -39,16 +71,24 @@ jobs:
           client_secret = ${{ secrets.DATABRICKS_CLIENT_SECRET }}
           EOF
 
+      # Step 4: Install uv package manager for Python dependency management
       - name: Install uv
         uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 #v5.4.1
 
+      # Step 5: Deploy Databricks bundle to target environment
       - name: Deploy to Databricks
         env:
+          # Set target environment (acc or prd) for bundle deployment
           DATABRICKS_BUNDLE_ENV: ${{ matrix.environment }}
         run: |
+            # Deploy bundle with git SHA for version tracking
             databricks bundle deploy --var="git_sha=${{ github.sha }}"
+            # Production-specific actions: Tag release in git
             if [ "${{ matrix.environment }}" = "prd" ]; then
             echo "VERSION=$(cat version.txt)"
+            VERSION=$(cat version.txt)
+            # Create git tag for production release
             git tag $VERSION
+            # Push tag to remote repository
             git push origin $VERSION
             fi
