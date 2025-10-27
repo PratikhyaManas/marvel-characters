@@ -1,37 +1,57 @@
 # Azure DevOps Pipeline for Marvel Characters MLOps Project
 # This pipeline combines CI (pull request validation) and CD (deployment) workflows
+# 
+# Pipeline Overview:
+# - CI Stage: Validates code quality through tests and pre-commit checks on PRs and main branch
+# - CD Stages: Deploys validated code to Databricks environments (Acceptance → Production)
+#
+# Prerequisites:
+# - Azure DevOps variable groups configured with Databricks credentials
+# - Environments 'acc' and 'prd' created in Azure DevOps for deployment approvals
+# - Service connection to Databricks workspace
 
+# Trigger: Automatically run pipeline when code is pushed to main branch
 trigger:
   branches:
     include:
       - main
 
+# PR Trigger: Automatically run CI validation for pull requests targeting main
 pr:
   branches:
     include:
       - main
 
+# Pipeline Variables: Centralized configuration for tool versions
 variables:
   - name: pythonVersion
-    value: '3.10'
+    value: '3.10'  # Python version for compatibility with Databricks runtime
   - name: databricksCliVersion
-    value: '0.246.0'
+    value: '0.246.0'  # Databricks CLI version for bundle deployments
 
 stages:
-  # CI Stage: Run on Pull Requests and Main Branch
+  # ============================================================================
+  # CI Stage: Continuous Integration
+  # ============================================================================
+  # Purpose: Validate code quality, run tests, and enforce coding standards
+  # Runs on: Pull requests and main branch pushes
+  # ============================================================================
   - stage: CI
     displayName: 'Continuous Integration'
+    # Condition: Run on PR builds or when pushing to main branch
     condition: or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: TestAndValidate
         displayName: 'Run Tests and Pre-commit Checks'
         pool:
-          vmImage: 'ubuntu-latest'
+          vmImage: 'ubuntu-latest'  # Use latest Ubuntu agent for Linux compatibility
         steps:
+          # Step 1: Checkout repository with full git history for tagging
           - checkout: self
-            fetchDepth: 0
+            fetchDepth: 0  # Fetch all history to enable git operations
             displayName: 'Checkout source code'
 
+          # Step 2: Create git tag from version.txt for release tracking
           - task: Bash@3
             displayName: 'Git tag from version.txt'
             inputs:
@@ -39,75 +59,101 @@ stages:
               script: |
                 echo "VERSION=$(cat version.txt)"
                 VERSION=$(cat version.txt)
+                # Create tag if it doesn't exist (non-blocking if tag exists)
                 git tag $VERSION || echo "Tag already exists"
 
+          # Step 3: Install uv - modern Python package manager (faster than pip)
           - task: Bash@3
             displayName: 'Install uv package manager'
             inputs:
               targetType: 'inline'
               script: |
+                # Download and install uv from official source
                 curl -LsSf https://astral.sh/uv/install.sh | sh
+                # Add uv to PATH for subsequent steps
                 export PATH="$HOME/.cargo/bin:$PATH"
                 echo "##vso[task.setvariable variable=PATH]$HOME/.cargo/bin:$PATH"
 
+          # Step 4: Install Python dependencies including test extras
           - task: Bash@3
             displayName: 'Install project dependencies'
             inputs:
               targetType: 'inline'
               script: |
                 export PATH="$HOME/.cargo/bin:$PATH"
+                # Install dependencies with test extras (pytest, coverage, etc.)
                 uv sync --extra test
 
+          # Step 5: Run pre-commit hooks for code quality checks
           - task: Bash@3
             displayName: 'Run pre-commit checks'
             inputs:
               targetType: 'inline'
               script: |
                 export PATH="$HOME/.cargo/bin:$PATH"
+                # Execute all pre-commit hooks (linting, formatting, type checks)
                 uv run pre-commit run --all-files
 
+          # Step 6: Execute pytest test suite
           - task: Bash@3
             displayName: 'Run pytest'
             inputs:
               targetType: 'inline'
               script: |
                 export PATH="$HOME/.cargo/bin:$PATH"
+                # Run all tests except those marked as ci_exclude
                 uv run pytest -m "not ci_exclude"
 
-  # CD Stage: Deploy to Databricks (runs only on main branch)
+  # ============================================================================
+  # CD Stage: Deploy to Acceptance Environment
+  # ============================================================================
+  # Purpose: Deploy validated code to Databricks acceptance workspace
+  # Runs on: Main branch only, after successful CI validation
+  # Environment: acc (with manual approval gates if configured)
+  # ============================================================================
   - stage: DeployAcceptance
     displayName: 'Deploy to Acceptance'
-    dependsOn: CI
+    dependsOn: CI  # Wait for CI stage to complete successfully
+    # Condition: Only deploy on main branch after successful CI
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - deployment: DeployToAcc
         displayName: 'Deploy to Acceptance Environment'
         pool:
           vmImage: 'ubuntu-latest'
-        environment: 'acc'
+        environment: 'acc'  # Azure DevOps environment for approval gates
         variables:
-          - group: databricks-acc  # Variable group containing DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET
+          # Variable group containing: DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET
+          # Configure this in Azure DevOps Library → Variable Groups
+          - group: databricks-acc
         strategy:
-          runOnce:
+          runOnce:  # Simple deployment strategy (no rolling/canary)
             deploy:
               steps:
+                # Step 1: Checkout source code for deployment
                 - checkout: self
                   displayName: 'Checkout source code'
 
+                # Step 2: Install Databricks CLI for bundle operations
                 - task: Bash@3
                   displayName: 'Install Databricks CLI'
                   inputs:
                     targetType: 'inline'
                     script: |
+                      # Download and install specific Databricks CLI version
                       curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh -s -- $(databricksCliVersion)
+                      # Verify installation
                       databricks --version
 
+                # Step 3: Configure Databricks authentication using service principal
                 - task: Bash@3
                   displayName: 'Configure Databricks CLI'
                   inputs:
                     targetType: 'inline'
                     script: |
+                      # Create Databricks config directory
                       mkdir -p ~/.databricks
+                      # Write configuration with service principal credentials
                       cat > ~/.databrickscfg << EOF
                       [marvelous]
                       host = $(DATABRICKS_HOST)
@@ -115,10 +161,12 @@ stages:
                       client_secret = $(DATABRICKS_CLIENT_SECRET)
                       EOF
                   env:
+                    # Pass secrets from variable group as environment variables
                     DATABRICKS_HOST: $(DATABRICKS_HOST)
                     DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
                     DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
 
+                # Step 4: Install uv package manager for Python dependencies
                 - task: Bash@3
                   displayName: 'Install uv package manager'
                   inputs:
@@ -128,38 +176,56 @@ stages:
                       export PATH="$HOME/.cargo/bin:$PATH"
                       echo "##vso[task.setvariable variable=PATH]$HOME/.cargo/bin:$PATH"
 
+                # Step 5: Deploy Databricks bundle to acceptance workspace
                 - task: Bash@3
                   displayName: 'Deploy to Databricks (Acceptance)'
                   inputs:
                     targetType: 'inline'
                     script: |
+                      # Deploy bundle with git SHA for version tracking
                       databricks bundle deploy --var="git_sha=$(Build.SourceVersion)"
                   env:
-                    DATABRICKS_BUNDLE_ENV: 'acc'
+                    DATABRICKS_BUNDLE_ENV: 'acc'  # Target acceptance environment
                     DATABRICKS_HOST: $(DATABRICKS_HOST)
                     DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
                     DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
 
-  # Optional: Production Deployment Stage (commented out by default)
+  # ============================================================================
+  # CD Stage: Deploy to Production Environment (OPTIONAL - Commented Out)
+  # ============================================================================
+  # Purpose: Deploy validated code to Databricks production workspace
+  # Runs on: Main branch only, after successful acceptance deployment
+  # Environment: prd (with manual approval gates recommended)
+  # 
+  # To enable production deployment:
+  # 1. Uncomment this entire stage
+  # 2. Create 'databricks-prd' variable group with production credentials
+  # 3. Create 'prd' environment in Azure DevOps with approval gates
+  # 4. Configure production workspace URL and service principal
+  # ============================================================================
   # - stage: DeployProduction
   #   displayName: 'Deploy to Production'
-  #   dependsOn: DeployAcceptance
+  #   dependsOn: DeployAcceptance  # Wait for acceptance deployment to succeed
+  #   # Condition: Only deploy to production on main branch after successful acceptance
   #   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   #   jobs:
   #     - deployment: DeployToPrd
   #       displayName: 'Deploy to Production Environment'
   #       pool:
   #         vmImage: 'ubuntu-latest'
-  #       environment: 'prd'
+  #       environment: 'prd'  # Production environment - SHOULD have approval gates configured
   #       variables:
-  #         - group: databricks-prd  # Variable group for production
+  #         # Variable group for production: DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET
+  #         - group: databricks-prd
   #       strategy:
   #         runOnce:
   #           deploy:
   #             steps:
+  #               # Step 1: Checkout source code for production deployment
   #               - checkout: self
   #                 displayName: 'Checkout source code'
   #
+  #               # Step 2: Install Databricks CLI
   #               - task: Bash@3
   #                 displayName: 'Install Databricks CLI'
   #                 inputs:
@@ -168,6 +234,7 @@ stages:
   #                     curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh -s -- $(databricksCliVersion)
   #                     databricks --version
   #
+  #               # Step 3: Configure Databricks authentication for production
   #               - task: Bash@3
   #                 displayName: 'Configure Databricks CLI'
   #                 inputs:
@@ -185,6 +252,7 @@ stages:
   #                   DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
   #                   DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
   #
+  #               # Step 4: Install uv package manager
   #               - task: Bash@3
   #                 displayName: 'Install uv package manager'
   #                 inputs:
@@ -194,24 +262,30 @@ stages:
   #                     export PATH="$HOME/.cargo/bin:$PATH"
   #                     echo "##vso[task.setvariable variable=PATH]$HOME/.cargo/bin:$PATH"
   #
+  #               # Step 5: Deploy Databricks bundle to production workspace
   #               - task: Bash@3
   #                 displayName: 'Deploy to Databricks (Production)'
   #                 inputs:
   #                   targetType: 'inline'
   #                   script: |
+  #                     # Deploy to production with git SHA tracking
   #                     databricks bundle deploy --var="git_sha=$(Build.SourceVersion)"
   #                 env:
-  #                   DATABRICKS_BUNDLE_ENV: 'prd'
+  #                   DATABRICKS_BUNDLE_ENV: 'prd'  # Target production environment
   #                   DATABRICKS_HOST: $(DATABRICKS_HOST)
   #                   DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
   #                   DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
   #
+  #               # Step 6: Tag production release in git repository
   #               - task: Bash@3
   #                 displayName: 'Tag production release'
   #                 inputs:
   #                   targetType: 'inline'
   #                   script: |
+  #                     # Read version from version.txt file
   #                     VERSION=$(cat version.txt)
   #                     echo "Tagging version: $VERSION"
+  #                     # Create git tag for production release
   #                     git tag $VERSION || echo "Tag already exists"
+  #                     # Push tag to remote repository (requires build service permissions)
   #                     git push origin $VERSION || echo "Failed to push tag"
