@@ -1,0 +1,217 @@
+# Azure DevOps Pipeline for Marvel Characters MLOps Project
+# This pipeline combines CI (pull request validation) and CD (deployment) workflows
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  - name: pythonVersion
+    value: '3.10'
+  - name: databricksCliVersion
+    value: '0.246.0'
+
+stages:
+  # CI Stage: Run on Pull Requests and Main Branch
+  - stage: CI
+    displayName: 'Continuous Integration'
+    condition: or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: TestAndValidate
+        displayName: 'Run Tests and Pre-commit Checks'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            displayName: 'Checkout source code'
+
+          - task: Bash@3
+            displayName: 'Git tag from version.txt'
+            inputs:
+              targetType: 'inline'
+              script: |
+                echo "VERSION=$(cat version.txt)"
+                VERSION=$(cat version.txt)
+                git tag $VERSION || echo "Tag already exists"
+
+          - task: Bash@3
+            displayName: 'Install uv package manager'
+            inputs:
+              targetType: 'inline'
+              script: |
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.cargo/bin:$PATH"
+                echo "##vso[task.setvariable variable=PATH]$HOME/.cargo/bin:$PATH"
+
+          - task: Bash@3
+            displayName: 'Install project dependencies'
+            inputs:
+              targetType: 'inline'
+              script: |
+                export PATH="$HOME/.cargo/bin:$PATH"
+                uv sync --extra test
+
+          - task: Bash@3
+            displayName: 'Run pre-commit checks'
+            inputs:
+              targetType: 'inline'
+              script: |
+                export PATH="$HOME/.cargo/bin:$PATH"
+                uv run pre-commit run --all-files
+
+          - task: Bash@3
+            displayName: 'Run pytest'
+            inputs:
+              targetType: 'inline'
+              script: |
+                export PATH="$HOME/.cargo/bin:$PATH"
+                uv run pytest -m "not ci_exclude"
+
+  # CD Stage: Deploy to Databricks (runs only on main branch)
+  - stage: DeployAcceptance
+    displayName: 'Deploy to Acceptance'
+    dependsOn: CI
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployToAcc
+        displayName: 'Deploy to Acceptance Environment'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'acc'
+        variables:
+          - group: databricks-acc  # Variable group containing DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  displayName: 'Checkout source code'
+
+                - task: Bash@3
+                  displayName: 'Install Databricks CLI'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh -s -- $(databricksCliVersion)
+                      databricks --version
+
+                - task: Bash@3
+                  displayName: 'Configure Databricks CLI'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      mkdir -p ~/.databricks
+                      cat > ~/.databrickscfg << EOF
+                      [marvelous]
+                      host = $(DATABRICKS_HOST)
+                      client_id = $(DATABRICKS_CLIENT_ID)
+                      client_secret = $(DATABRICKS_CLIENT_SECRET)
+                      EOF
+                  env:
+                    DATABRICKS_HOST: $(DATABRICKS_HOST)
+                    DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
+                    DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
+
+                - task: Bash@3
+                  displayName: 'Install uv package manager'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      curl -LsSf https://astral.sh/uv/install.sh | sh
+                      export PATH="$HOME/.cargo/bin:$PATH"
+                      echo "##vso[task.setvariable variable=PATH]$HOME/.cargo/bin:$PATH"
+
+                - task: Bash@3
+                  displayName: 'Deploy to Databricks (Acceptance)'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      databricks bundle deploy --var="git_sha=$(Build.SourceVersion)"
+                  env:
+                    DATABRICKS_BUNDLE_ENV: 'acc'
+                    DATABRICKS_HOST: $(DATABRICKS_HOST)
+                    DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
+                    DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
+
+  # Optional: Production Deployment Stage (commented out by default)
+  # - stage: DeployProduction
+  #   displayName: 'Deploy to Production'
+  #   dependsOn: DeployAcceptance
+  #   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  #   jobs:
+  #     - deployment: DeployToPrd
+  #       displayName: 'Deploy to Production Environment'
+  #       pool:
+  #         vmImage: 'ubuntu-latest'
+  #       environment: 'prd'
+  #       variables:
+  #         - group: databricks-prd  # Variable group for production
+  #       strategy:
+  #         runOnce:
+  #           deploy:
+  #             steps:
+  #               - checkout: self
+  #                 displayName: 'Checkout source code'
+  #
+  #               - task: Bash@3
+  #                 displayName: 'Install Databricks CLI'
+  #                 inputs:
+  #                   targetType: 'inline'
+  #                   script: |
+  #                     curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh -s -- $(databricksCliVersion)
+  #                     databricks --version
+  #
+  #               - task: Bash@3
+  #                 displayName: 'Configure Databricks CLI'
+  #                 inputs:
+  #                   targetType: 'inline'
+  #                   script: |
+  #                     mkdir -p ~/.databricks
+  #                     cat > ~/.databrickscfg << EOF
+  #                     [marvelous]
+  #                     host = $(DATABRICKS_HOST)
+  #                     client_id = $(DATABRICKS_CLIENT_ID)
+  #                     client_secret = $(DATABRICKS_CLIENT_SECRET)
+  #                     EOF
+  #                 env:
+  #                   DATABRICKS_HOST: $(DATABRICKS_HOST)
+  #                   DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
+  #                   DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
+  #
+  #               - task: Bash@3
+  #                 displayName: 'Install uv package manager'
+  #                 inputs:
+  #                   targetType: 'inline'
+  #                   script: |
+  #                     curl -LsSf https://astral.sh/uv/install.sh | sh
+  #                     export PATH="$HOME/.cargo/bin:$PATH"
+  #                     echo "##vso[task.setvariable variable=PATH]$HOME/.cargo/bin:$PATH"
+  #
+  #               - task: Bash@3
+  #                 displayName: 'Deploy to Databricks (Production)'
+  #                 inputs:
+  #                   targetType: 'inline'
+  #                   script: |
+  #                     databricks bundle deploy --var="git_sha=$(Build.SourceVersion)"
+  #                 env:
+  #                   DATABRICKS_BUNDLE_ENV: 'prd'
+  #                   DATABRICKS_HOST: $(DATABRICKS_HOST)
+  #                   DATABRICKS_CLIENT_ID: $(DATABRICKS_CLIENT_ID)
+  #                   DATABRICKS_CLIENT_SECRET: $(DATABRICKS_CLIENT_SECRET)
+  #
+  #               - task: Bash@3
+  #                 displayName: 'Tag production release'
+  #                 inputs:
+  #                   targetType: 'inline'
+  #                   script: |
+  #                     VERSION=$(cat version.txt)
+  #                     echo "Tagging version: $VERSION"
+  #                     git tag $VERSION || echo "Tag already exists"
+  #                     git push origin $VERSION || echo "Failed to push tag"
